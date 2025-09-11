@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>婚禮小物／賀卡影像產生器｜離線可開（純原生 JS）</title>
+  <style>
+    *{box-sizing:border-box}
+    body{overflow-x:hidden}
+
+    :root{--card-w:360px;--card-h:500px;--bg:#f8fafc;--ink:#111}
+    html,body{height:100%}
+    body{margin:0;background:#f3f4f6;font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans TC",sans-serif;color:#111;position:relative}
+    /* 全站浮水印背景（僅頁面顯示，不影響下載輸出） */
+    body::before{content:"";position:fixed;inset:0;background-image:url('./background.png');background-repeat:repeat;background-size: clamp(600px, 60vw, 1000px) auto;opacity:.06;pointer-events:none;z-index:0}
+    .page{min-height:100%;padding:24px;position:relative;z-index:1}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;max-width:1180px;margin:0 auto}
+    @media(min-width:1024px){.grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+    h1{font-size:22px;margin:0 0 12px;font-weight:600}
+    .panel{background:#fff;border:1px solid #eef0f3;border-radius:16px;box-shadow:0 8px 20px rgba(0,0,0,.05);padding:20px;min-width:0}
+    .panel h2{margin:0 0 12px;font-size:16px;font-weight:700}
+    .panel-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .how{width:100%;border:1px solid #e5e7eb;border-radius:12px;margin-top:8px}
+    .step-lines>div{font-weight:700}
+    .btn{display:inline-flex;gap:8px;align-items:center;border:0;border-radius:10px;padding:8px 12px;background:#111;color:#fff;cursor:pointer}
+    .btn.primary{background:#4f46e5}.btn.success{background:#059669}.btn:disabled{opacity:.6;cursor:not-allowed}
+    .muted{color:#6b7280;font-size:12px}
+    .row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .row2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    .pad{padding:8px 0}
+    .input, .range{width:100%}
+    .input{border:1px solid #d1d5db;border-radius:12px;padding:8px 12px;font-size:14px}
+    .file{border:1px dashed #cbd5e1;border-radius:12px;padding:12px;cursor:pointer}
+    .thumb-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .thumb{border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+    .thumb img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
+    .thumb a{display:block;text-align:center;font-size:12px;padding:4px;background:#f3f4f6;text-decoration:none;color:#111}
+
+    /* 預覽卡片（UI 放大；輸出仍 638×885） */
+    .card{width:var(--card-w);height:var(--card-h);background:var(--bg);border-radius:12px;position:relative;overflow:hidden;box-shadow:0 8px 20px rgba(0,0,0,.1)}
+    .layer{position:absolute;inset:0}
+    .img{object-fit:contain;width:100%;height:100%;user-select:none}
+    .drag{cursor:default}
+    .text-top{position:absolute;inset:0;text-align:center;color:#000;font-family:"Microsoft JhengHei","微軟正黑體","Noto Sans TC",sans-serif;font-size:24px;font-weight:700;user-select:none;pointer-events:none}
+    .text-top .line{position:absolute;left:50%;transform:translate(-50%,-50%);transform-origin:center center;}
+    .text-top .name{top:calc(100% - 60px);} 
+    .text-top .date{top:calc(100% - 30px);} 
+    .hidden{display:none}
+    .ring{outline:2px solid #000}
+
+    .help{background:#fff6c2;border:1px solid #fde68a;border-radius:12px;padding:12px;margin-bottom:12px}
+    .help code{background:#fff;border-radius:6px;padding:2px 6px}
+    .actions{position:sticky;bottom:0;background:#fff;border-top:1px solid #e5e7eb;padding-top:8px} 
+    /* --- 裁切器（modal） --- */
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:50;padding:16px;overscroll-behavior:contain} 
+    .modal.show{display:grid}
+    .modal-body{background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:16px;width:min(92vw,860px);max-height:92vh;overflow:auto;-webkit-overflow-scrolling:touch;box-sizing:border-box} 
+    #cropCanvas{width:100%;height:auto;display:block;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px}
+      /* 固定左半邊（桌面版） */
+    @media(min-width:1024px){.leftCol{position:sticky;top:24px;align-self:start;height:fit-content}}
+      /* 手機版（單欄）固定頂端預覽 */
+    @media(max-width:1023.98px){
+      .leftCol{position:sticky;top:24px;z-index:20;background:#f3f4f6;padding-top:8px;}
+    }
+  .brand{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;margin:8px auto 16px}.brand img{width:clamp(120px,30vw,160px);height:auto;margin:0 auto}.brand .note{color:#6b7280;font-size:12px;margin-top:6px;text-align:center}
+  .leftCol{min-width:0}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="brand">
+      <img src="./logo.png" alt="西川米店 LOGO">
+      <div class="note"><strong>⚠️使用限制⚠️</strong><br>1. 本頁僅供西川米店客戶製作婚禮頭卡使用。<br>2. 禁止 轉載、散佈、二次提供服務或商業使用。<br>3. 其他用途需事先取得本店書面同意。<br>4. 請確認所上傳圖片已取得合法授權與肖像/版權同意，使用者自負相關法律責任。<br>5. 本店得視情況調整或終止本服務。</div>
+    </div>
+    <div id="compat"></div>
+    <div class="grid">
+      <!-- 左：預覽 -->
+      <div class="leftCol">
+        <h1>婚禮頭卡客製預覽</h1>
+        <div id="preview" class="card">
+          <!-- 外框（最下層） -->
+          <img id="frameImg" class="layer img" alt="frame"/>
+          <!-- 圖片（中層，可拖曳與縮放） -->
+          <img id="photoImg" class="layer img" alt="uploaded"/>
+          <!-- 文字（最上層，可拖曳） -->
+          <div id="textLayer" class="text-top"> 
+            <div id="nameLine" class="line name">新人姓名</div>
+            <div id="dateLine" class="line date">2025.12.31</div>
+          </div>
+        </div>
+        <canvas id="exportCanvas" class="hidden" width="1276" height="1770"></canvas>
+        <div class="pad">
+          <button id="downloadBtn" class="btn">下載 JPG</button>
+          <div class="muted pad">輸出尺寸：54mm × 75mm（1276×1770 px @600dpi）</div>
+        </div>
+      </div>
+
+      <!-- 右：控制面板 -->
+      <div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>1. AI圖片生成</h2>
+          </div>
+          <div class="pad">
+            <div class="step-lines">
+              <div>1. 找尋自己喜歡的風格圖片</div>
+              <div>2. 請進入 ChatGPT 同時上傳欲使用的照片及喜歡的風格圖片</div>
+              <div>3. 請複製以下指令「請用第二張的繪圖手法重新繪製第一張新人照片，新人的臉、髮型、構圖跟服裝都要保留」</div>
+              <div>4. 按 ENTER 生成</div>
+            </div>
+            <div class="pad"><a id="chatgptLink" class="btn primary" href="#" target="_blank" rel="noopener">打開 ChatGPT</a></div>
+            <img src="./HOW.jpg" alt="操作說明" class="how">
+          </div>
+          <div class="pad">
+            <div class="pad"><strong>下方三種風格可供參考</strong></div>
+            <div class="pad"><strong>寫實漫畫</strong></div>
+            <div id="realisticGrid" class="thumb-grid"></div>
+          </div>
+          <div class="pad">
+            <div class="pad"><strong>Q 版</strong></div>
+            <div id="qGrid" class="thumb-grid"></div>
+          </div>
+          <div class="pad">
+            <div class="pad"><strong>3D</strong></div>
+            <div id="dGrid" class="thumb-grid"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>2. 請先至PicWish進行去背</h2>
+          <div class="pad">
+            <a id="picwishLink" class="btn success" href="#" target="_blank" rel="noopener">打開 PicWish 去背</a>
+          </div>
+          <div class="muted">完成去背後，請下載 PNG，並在下一步上傳。</div>
+        </div>
+
+        <div class="panel">
+          <h2>3. 上傳去背的圖片</h2>
+          <label class="file">
+            <input id="fileInput" type="file" accept="image/*"/>
+          </label>
+          <div class="pad">
+            <button id="openCropBtn" class="btn" disabled>裁切圖片</button>
+            <span class="muted">（可固定或自由比例，先裁切再到左側預覽微調）</span>
+          </div>
+          <div class="row pad">
+            <label>縮放（圖片）<input id="scaleRange" class="range" type="range" min="0.3" max="2.5" step="0.01" value="1"></label>
+            <label>水平位置（圖片）<input id="xRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+            <label>垂直位置（圖片）<input id="yRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>4. 選擇外框</h2>
+          <div id="framesGrid" class="thumb-grid"></div>
+        </div>
+
+        <div class="panel">
+          <h2>5. 名字與日期</h2>
+          <div class="row2 pad">
+            <label>名字<input id="nameInput" class="input" type="text" value="新人姓名"/></label>
+            <label>婚禮日期<input id="dateInput" class="input" type="text" value="2025.12.31"/></label>
+          </div>
+          <div class="row pad">
+            <label>名字－水平<input id="nameXRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+            <label>名字－垂直<input id="nameYRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+            <label>名字－縮放<input id="nameSRange" class="range" type="range" min="0.6" max="2.0" step="0.02" value="1"></label>
+          </div>
+          <div class="pad">
+            <button id="nameCenterBtn" class="btn">名字一鍵置中</button>
+          </div>
+          <div class="row pad">
+            <label>日期－水平<input id="dateXRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+            <label>日期－垂直<input id="dateYRange" class="range" type="range" min="-300" max="300" step="1" value="0"></label>
+            <label>日期－縮放<input id="dateSRange" class="range" type="range" min="0.6" max="2.0" step="0.02" value="1"></label>
+          </div>
+          <div class="pad">
+            <button id="dateCenterBtn" class="btn">日期一鍵置中</button>
+          </div>
+        </div>
+        
+          
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 裁切器 Modal -->
+  <div id="cropModal" class="modal" aria-hidden="true">
+    <div class="modal-body">
+      <h3 id="cropTitle" style="margin:0 0 6px;font-size:16px;font-weight:700;">裁切圖片</h3>
+      <div id="cropInfo" class="muted" style="margin-bottom:8px;">輸出比例 2:3（638×885 px）</div>
+      <div class="row2 pad">
+        <label>比例模式
+          <select id="ratioSelect" class="input">
+            <option value="2:3" selected>固定 2:3</option>
+            <option value="1:1">固定 1:1</option>
+            <option value="3:4">固定 3:4</option>
+            <option value="4:3">固定 4:3</option>
+            <option value="9:16">固定 9:16</option>
+            <option value="16:9">固定 16:9</option>
+            <option value="free">自由比例</option>
+          </select>
+        </label>
+        <label id="ratioFreeWrap" style="display:none;">寬高比（寬/高）
+          <input id="ratioRange" class="range" type="range" min="0.50" max="2.00" step="0.01" value="0.72">
+        </label>
+      </div>
+      <canvas id="cropCanvas" width="638" height="885"></canvas>
+      <div class="row pad">
+        <label>縮放（裁切）<input id="cropScale" class="range" type="range" min="1" max="3" step="0.01" value="1"></label>
+        <label>水平（裁切）<input id="cropX" class="range" type="range" min="-600" max="600" step="1" value="0"></label>
+        <label>垂直（裁切）<input id="cropY" class="range" type="range" min="-600" max="600" step="1" value="0"></label>
+      </div>
+      <div class="pad actions">
+        <button id="cropConfirm" class="btn success">套用裁切</button>
+        <button id="cropCancel" class="btn" style="margin-left:8px;">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ------ 設定（可更換） ------
+    const CHATGPT_URL = 'https://chat.openai.com/';
+    const PICWISH_URL = 'https://picwish.com/tw/remove-background?apptype=aps-gg-tw&gad_source=1&gad_campaignid=20179218167&gbraid=0AAAAACjUYSZW6I5XL6N4j8E0eDX8Ez6UR&gclid=CjwKCAjw2vTFBhAuEiwAFaScwkYdCqgd5NbqZ535tgm_bmm1TpFZhkdV0JHTzRX4D1jim_9YHl7aFxoCROkQAvD_BwE';
+
+    // 檢查是否以 file:// 開啟，給予友善提示
+    (function(){
+      if(location.protocol === 'file:'){
+        const n = document.createElement('div');
+        n.className = 'help';
+        n.innerHTML = '目前以 <code>file://</code> 開啟。若遇到圖片匯出或載入問題，建議改用本機伺服器開啟：<br>Windows 可在資料夾的位址列輸入 <code>cmd</code> 後執行 <code>python -m http.server 8000</code>；macOS 請在終端機執行同樣指令，然後開啟 <code>http://localhost:8000/index.html</code>。';
+        document.getElementById('compat').appendChild(n);
+      }
+    })();
+
+    // ------ 狀態 ------
+    const state = {
+      scale: 1, posX: 0, posY: 0,
+      nameX: 0, nameY: 0, nameScale: 1,
+      dateX: 0, dateY: 0, dateScale: 1,
+      frameKey: 'frame1',
+      name: '新人姓名', date: '2025.12.31',
+      photoUrl: null
+    };
+
+    // ------ DOM 取得 ------
+    const preview = document.getElementById('preview');
+    const frameImg = document.getElementById('frameImg');
+    const photoImg = document.getElementById('photoImg');
+    const textLayer = document.getElementById('textLayer');
+    const nameLine = document.getElementById('nameLine');
+    const dateLine = document.getElementById('dateLine');
+    const exportCanvas = document.getElementById('exportCanvas');
+
+    // 連結
+    document.getElementById('chatgptLink').href = CHATGPT_URL;
+    document.getElementById('picwishLink').href = PICWISH_URL;
+
+    // 風格與外框清單
+    const Frames = {
+      frame1: './frames/似顏繪頭卡-10.jpg',
+      frame2: './frames/似顏繪頭卡-11.jpg',
+      frame3: './frames/似顏繪頭卡-12.jpg',
+      frame4: './frames/似顏繪頭卡-13.jpg',
+      frame5: './frames/似顏繪頭卡-14.jpg',
+      frame6: './frames/似顏繪頭卡-15.jpg',
+      frame7: './frames/似顏繪頭卡-16.jpg',
+      frame8: './frames/似顏繪頭卡-17.jpg'
+    };
+    const Styles = {
+      realistic: ['./styles/realistic1.jpg','./styles/realistic2.jpg','./styles/realistic3.jpg','./styles/realistic4.jpg'],
+      q: ['./styles/q1.jpg','./styles/q2.jpg','./styles/q3.jpg','./styles/q4.jpg'],
+      d: ['./styles/3d1.jpg','./styles/3d2.jpg','./styles/3d3.jpg','./styles/3d4.jpg']
+    };
+
+    // 建立縮圖下載
+    function buildStyleGrid(list, mount){
+      list.forEach((url,idx)=>{
+        const box = document.createElement('div'); box.className='thumb';
+        const img = document.createElement('img'); img.src=url; img.alt='style'+idx; img.onerror=()=>{img.replaceWith(placeHolder());};
+        const a = document.createElement('a'); a.href=url; a.download=`style-${idx+1}.jpg`; a.textContent='下載';
+        box.appendChild(img); box.appendChild(a); mount.appendChild(box);
+      });
+    }
+    function placeHolder(){
+      const p = document.createElement('div'); p.style.background='#e5e7eb'; p.style.color='#6b7280'; p.style.display='grid'; p.style.placeItems='center'; p.style.aspectRatio='1/1'; p.textContent='無圖'; return p;
+    }
+    buildStyleGrid(Styles.realistic, document.getElementById('realisticGrid'));
+    buildStyleGrid(Styles.q, document.getElementById('qGrid'));
+    buildStyleGrid(Styles.d, document.getElementById('dGrid'));
+
+    // 外框選擇
+    const framesGrid = document.getElementById('framesGrid');
+    Object.entries(Frames).forEach(([k,url])=>{
+      const box = document.createElement('div'); box.className='thumb'; box.style.cursor='pointer';
+      const img = document.createElement('img'); img.src=url; img.alt=k; img.onerror=()=>{img.replaceWith(placeHolder());};
+      box.appendChild(img);
+      box.addEventListener('click', ()=>{ state.frameKey=k; refreshFrame(); highlight(box); });
+      framesGrid.appendChild(box);
+    });
+    function highlight(activeBox){
+      [...framesGrid.children].forEach(el=>el.classList.remove('ring'));
+      activeBox.classList.add('ring');
+    }
+
+    function refreshFrame(){ frameImg.src = Frames[state.frameKey] || ''; }
+    refreshFrame();
+
+    // 上傳檔案
+    document.getElementById('fileInput').addEventListener('change', (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f){ state.photoUrl=null; photoImg.removeAttribute('src'); document.getElementById('openCropBtn').disabled = true; return; }
+      const u = URL.createObjectURL(f);
+      state.photoUrl = u; photoImg.src = u;
+      document.getElementById('openCropBtn').disabled = false;
+    });
+
+    // 控制：圖片縮放與位置
+    document.getElementById('scaleRange').addEventListener('input', e=>{ state.scale=Number(e.target.value); applyTransform(); });
+    document.getElementById('xRange').addEventListener('input', e=>{ state.posX=Number(e.target.value); applyTransform(); });
+    document.getElementById('yRange').addEventListener('input', e=>{ state.posY=Number(e.target.value); applyTransform(); });
+
+    function applyTransform(){
+      const sx = preview.clientWidth / 638;
+      const sy = preview.clientHeight / 885;
+      photoImg.style.transform = `translate(${state.posX * sx}px, ${state.posY * sy}px) scale(${state.scale})`;
+      photoImg.style.transformOrigin='center';
+    }
+
+    // 拖曳圖片（已停用，僅能用滑桿調整）
+    function syncRanges(){ document.getElementById('xRange').value=state.posX; document.getElementById('yRange').value=state.posY; }
+
+    // 文字內容與拖曳
+    const nameInput=document.getElementById('nameInput');
+    const dateInput=document.getElementById('dateInput');
+    nameInput.addEventListener('input', ()=>{ state.name=nameInput.value; nameLine.textContent=state.name; });
+    dateInput.addEventListener('input', ()=>{ state.date=dateInput.value; dateLine.textContent=state.date; });
+
+    const nameXR=document.getElementById('nameXRange');
+    const nameYR=document.getElementById('nameYRange');
+    const nameSR=document.getElementById('nameSRange');
+    const dateXR=document.getElementById('dateXRange');
+    const dateYR=document.getElementById('dateYRange');
+    const dateSR=document.getElementById('dateSRange');
+    const nameCenterBtn=document.getElementById('nameCenterBtn');
+    const dateCenterBtn=document.getElementById('dateCenterBtn');
+
+    // 預覽與輸出一致化：依預覽卡片大小把基準位置與字級等比例縮放
+    function syncPreviewMetrics(){
+      const sx = preview.clientWidth / 638;
+      const sy = preview.clientHeight / 885;
+      // 距底 60 / 30 px（轉為預覽像素）
+      nameLine.style.top = (preview.clientHeight - 60 * sy) + 'px';
+      dateLine.style.top = (preview.clientHeight - 30 * sy) + 'px';
+      // 基準字級（24px → 等比例縮）
+      const basePx = 24 * sy;
+      nameLine.style.fontSize = basePx + 'px';
+      dateLine.style.fontSize = basePx + 'px';
+    
+      // 允許垂直移到最上方：動態設定滑桿範圍
+      const range = Math.round(preview.clientHeight * 1.5);
+      nameYR.min = String(-range); nameYR.max = String(range);
+      nameYR.setAttribute('min', String(-range)); nameYR.setAttribute('max', String(range));
+      dateYR.min = String(-range); dateYR.max = String(range);
+      dateYR.setAttribute('min', String(-range)); dateYR.setAttribute('max', String(range));
+    }
+    window.addEventListener('resize', ()=>{ syncPreviewMetrics(); applyText(); applyTransform(); });
+
+    function applyText(){
+      const sx = preview.clientWidth / 638;
+      const sy = preview.clientHeight / 885;
+      nameLine.style.transform = `translate(-50%, -50%) translate(${state.nameX * sx}px, ${state.nameY * sy}px) scale(${state.nameScale})`;
+      dateLine.style.transform = `translate(-50%, -50%) translate(${state.dateX * sx}px, ${state.dateY * sy}px) scale(${state.dateScale})`;
+    }
+
+    // 滑桿事件
+    nameXR.addEventListener('input', e=>{ state.nameX=Number(e.target.value); applyText(); });
+    nameYR.addEventListener('input', e=>{ state.nameY=Number(e.target.value); applyText(); });
+    nameSR.addEventListener('input', e=>{ state.nameScale=Number(e.target.value); applyText(); });
+    dateXR.addEventListener('input', e=>{ state.dateX=Number(e.target.value); applyText(); });
+    dateYR.addEventListener('input', e=>{ state.dateY=Number(e.target.value); applyText(); });
+    dateSR.addEventListener('input', e=>{ state.dateScale=Number(e.target.value); applyText(); });
+
+    // 一鍵置中
+    function centerName(){ state.nameX=0; state.nameY=0; nameXR.value='0'; nameYR.value='0'; applyText(); }
+    function centerDate(){ state.dateX=0; state.dateY=0; dateXR.value='0'; dateYR.value='0'; applyText(); }
+    nameCenterBtn.addEventListener('click', centerName);
+    dateCenterBtn.addEventListener('click', centerDate);
+    syncPreviewMetrics();
+    applyText();
+    applyTransform();
+
+    // ---- 裁切器邏輯 ----
+    const cropModal = document.getElementById('cropModal');
+    const cropCanvas = document.getElementById('cropCanvas');
+    const cropCtx = cropCanvas.getContext('2d');
+    const cropScaleEl = document.getElementById('cropScale');
+    const cropXEl = document.getElementById('cropX');
+    const cropYEl = document.getElementById('cropY');
+    const openCropBtn = document.getElementById('openCropBtn');
+    const cropConfirm = document.getElementById('cropConfirm');
+    const cropCancel = document.getElementById('cropCancel');
+
+    // 任意比例裁切：控制項
+    const ratioSelect = document.getElementById('ratioSelect');
+    const ratioRange = document.getElementById('ratioRange');
+    const ratioFreeWrap = document.getElementById('ratioFreeWrap');
+    const cropInfo = document.getElementById('cropInfo');
+
+    let cropTargetW = 638; // 固定寬度，以此計算高度
+    let cropTargetH = 885; // 預設 2:3
+
+    function gcd(a,b){ return b ? gcd(b, a % b) : a; }
+    function ratioText(w,h){ const g = gcd(w,h); return `${Math.round(w/g)}:${Math.round(h/g)}`; }
+
+    function updateCropInfo(){ cropInfo.textContent = `輸出比例 ${ratioText(cropTargetW, cropTargetH)}（${cropTargetW}×${cropTargetH} px）`; }
+
+    function applyCropCanvasSize(){
+      cropCanvas.width = cropTargetW;
+      cropCanvas.height = cropTargetH;
+      if(cropState.img){
+        cropState.base = Math.max(cropCanvas.width/cropState.img.width, cropCanvas.height/cropState.img.height); // cover 補滿裁切區
+      }
+      drawCrop();
+      updateCropInfo();
+    }
+
+    function setRatioPreset(val){
+      if(val === 'free'){
+        ratioFreeWrap.style.display = '';
+        const rr = parseFloat(ratioRange.value) || 0.72; // 寬/高
+        cropTargetW = 638;
+        cropTargetH = Math.max(100, Math.round(cropTargetW / rr));
+      } else {
+        ratioFreeWrap.style.display = 'none';
+        const [rw,rh] = val.split(':').map(Number);
+        cropTargetW = 638;
+        cropTargetH = Math.round(cropTargetW * rh / rw);
+      }
+      applyCropCanvasSize();
+    }
+
+    ratioSelect.addEventListener('change', e=> setRatioPreset(e.target.value));
+    ratioRange.addEventListener('input', ()=> setRatioPreset('free'));
+
+    const cropState = { img:null, base:1, scale:1, x:0, y:0 };
+
+    function drawCrop(){
+      if(!cropState.img){ cropCtx.clearRect(0,0,cropCanvas.width,cropCanvas.height); return; }
+      cropCtx.clearRect(0,0,cropCanvas.width,cropCanvas.height);
+      const s = cropState.base * cropState.scale;
+      const w = cropState.img.width * s;
+      const h = cropState.img.height * s;
+      const dx = (cropCanvas.width - w)/2 + cropState.x;
+      const dy = (cropCanvas.height - h)/2 + cropState.y;
+      cropCtx.drawImage(cropState.img, dx, dy, w, h);
+      cropCtx.save(); cropCtx.strokeStyle = '#111'; cropCtx.lineWidth = 2; cropCtx.strokeRect(1,1,cropCanvas.width-2,cropCanvas.height-2); cropCtx.restore();
+    }
+
+    function openCropper(){
+      if(!state.photoUrl) return;
+      cropModal.classList.add('show');
+      // 預設回到 2:3
+      ratioSelect.value = '2:3';
+      setRatioPreset('2:3');
+      loadImage(state.photoUrl).then(img=>{
+        cropState.img = img;
+        // 基底比例依照目前裁切畫布大小
+        cropState.base = Math.max(cropCanvas.width/img.width, cropCanvas.height/img.height);
+        cropState.scale = 1; cropState.x = 0; cropState.y = 0;
+        cropScaleEl.value = String(cropState.scale);
+        cropXEl.value = String(cropState.x);
+        cropYEl.value = String(cropState.y);
+        drawCrop();
+      }).catch(()=>{
+        alert('圖片載入失敗，請重試或更換圖片');
+      });
+    }
+    function closeCropper(){ cropModal.classList.remove('show'); }
+
+    openCropBtn.addEventListener('click', openCropper);
+    cropCancel.addEventListener('click', closeCropper);
+
+    cropScaleEl.addEventListener('input', e=>{ cropState.scale = Number(e.target.value); drawCrop(); });
+    cropXEl.addEventListener('input', e=>{ cropState.x = Number(e.target.value); drawCrop(); });
+    cropYEl.addEventListener('input', e=>{ cropState.y = Number(e.target.value); drawCrop(); });
+
+    cropConfirm.addEventListener('click', ()=>{
+      if(!cropState.img) return;
+      const oc = document.createElement('canvas'); oc.width = cropCanvas.width; oc.height = cropCanvas.height;
+      const octx = oc.getContext('2d');
+      octx.clearRect(0,0,oc.width,oc.height);
+      const s = cropState.base * cropState.scale;
+      const w = cropState.img.width * s;
+      const h = cropState.img.height * s;
+      const dx = (oc.width - w)/2 + cropState.x;
+      const dy = (oc.height - h)/2 + cropState.y;
+      octx.drawImage(cropState.img, dx, dy, w, h);
+      oc.toBlob((blob)=>{
+        if(!blob){ alert('裁切失敗，請再試一次'); return; }
+        const url = URL.createObjectURL(blob);
+        state.photoUrl = url; photoImg.src = url;
+        state.scale=1; state.posX=0; state.posY=0; applyTransform();
+        document.getElementById('scaleRange').value='1';
+        document.getElementById('xRange').value='0';
+        document.getElementById('yRange').value='0';
+        closeCropper();
+      }, 'image/png');
+    });
+
+    // 匯出 JPG（外框最下、圖片中層、文字最上）
+    document.getElementById('downloadBtn').addEventListener('click', async ()=>{
+      try{
+        const c = exportCanvas; const ctx = c.getContext('2d'); const sx = c.width/638, sy = c.height/885;
+        // 先鋪白底，避免 JPG 透明區塊變黑
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0,0,c.width,c.height);
+        ctx.restore();
+
+        // 圖層順序：外框（底）→ 圖片（中）→ 文字（上）
+        if(Frames[state.frameKey]) await drawFull(ctx, Frames[state.frameKey]);
+        if(state.photoUrl) await drawFitted(ctx, state.photoUrl, state.scale, state.posX * sx, state.posY * sy);
+
+        // 文字
+        ctx.save(); ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        let txc = c.width/2;
+        ctx.font=`bold ${Math.round(24* state.nameScale * sy)}px "Microsoft JhengHei", "微軟正黑體", sans-serif`;
+        ctx.fillText(state.name, txc + state.nameX * sx, c.height-60 * sy + state.nameY * sy);
+        ctx.font=`bold ${Math.round(24* state.dateScale * sy)}px "Microsoft JhengHei", "微軟正黑體", sans-serif`;
+        ctx.fillText(state.date, txc + state.dateX * sx, c.height-30 * sy + state.dateY * sy);
+        ctx.restore();
+
+        const filename = `cichuan-wedding-${Date.now()}.jpg`;
+        const isIOS = /iP(hone|ad|od)/i.test(navigator.userAgent);
+        const isSafari = /^((?!chrome|chromium|android|edg).)*safari/i.test(navigator.userAgent);
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const isChrome = /Chrome/i.test(navigator.userAgent) && !/Edg/i.test(navigator.userAgent);
+        const isFile = location.protocol === 'file:';
+        // Android 的 Chrome 在 file:// 常會忽略 download，改以 dataURL + 新分頁方式
+        const preferDataUrl = isIOS || isSafari || (isAndroid && isFile); // Safari/iOS 下載屬性相容性較差
+
+        const trigger = (url)=>{
+          if(isFile){ // file:// 環境下直接開新分頁，使用者可長按另存
+            const w = window.open(url, '_blank');
+            if(!w){
+              const a = document.createElement('a'); a.href = url; a.target = '_blank'; document.body.appendChild(a); a.click(); a.remove();
+            }
+            return;
+          }
+          const a = document.createElement('a');
+          a.href = url;
+          if(!isIOS && !isFile) a.download = filename; // iOS / file:// 會忽略 download
+          a.rel = 'noopener';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        };
+
+        if(preferDataUrl){
+          const url = c.toDataURL('image/jpeg', 0.92);
+          trigger(url);
+          return;
+        }
+
+        if (c.toBlob) {
+          c.toBlob((blob) => {
+            if (!blob) { // 退回 dataURL
+              const url = c.toDataURL('image/jpeg', 0.92);
+              trigger(url);
+              return;
+            }
+            const url = URL.createObjectURL(blob);
+            trigger(url);
+            setTimeout(()=>URL.revokeObjectURL(url), 1000);
+          }, 'image/jpeg', 0.92);
+        } else {
+          const url = c.toDataURL('image/jpeg', 0.92);
+          trigger(url);
+        }
+      } catch(e){
+        console.error(e && e.message ? e.message : e);
+        alert(`下載失敗：可能是跨網域圖片造成畫布被保護（CORS），或是瀏覽器限制。
+請改用本機伺服器（http://localhost）開啟，並確認外框/照片與此網頁同網域或支援 CORS。`);
+      }
+    });
+
+    // --- 繪圖工具：僅在 http(s) 設定 crossOrigin，避免 file:// 問題 ---
+    function isHttp(u){ return /^https?:/i.test(u||''); }
+    function loadImage(src){ return new Promise((ok,err)=>{ const i=new Image(); if(isHttp(src)) i.crossOrigin='anonymous'; i.decoding='async'; i.onload=()=>ok(i); i.onerror=()=>err(new Error('Image load failed: '+src)); i.src=src; }); }
+    async function drawFull(ctx, src){ const img = await loadImage(src); const W = ctx.canvas.width, H = ctx.canvas.height; ctx.drawImage(img,0,0,W,H); }
+    async function drawFitted(ctx, src, scale=1, posX=0, posY=0){ const img=await loadImage(src); const W = ctx.canvas.width, H = ctx.canvas.height; const r=Math.min(W/img.width, H/img.height); const w=img.width*r*scale; const h=img.height*r*scale; const dx=(W-w)/2 + posX; const dy=(H-h)/2 + posY; ctx.drawImage(img,dx,dy,w,h); }
+  </script>
+</body>
+</html>
